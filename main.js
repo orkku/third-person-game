@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import Stats from 'three/examples/jsm/libs/stats.module.js'
+import { RapierPhysics } from 'three/examples/jsm/Addons.js';
+import { RapierHelper } from 'three/examples/jsm/helpers/RapierHelper.js';
 import { OrbitControls } from 'three/examples/jsm/Addons.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { Player, Idle, Walk_forward, Walk_forward_left, Walk_forward_right, Walk_backward, Walk_backward_left, Walk_backward_right, Walk_left, Walk_right, Run_forward, Run_forward_left, Run_forward_right, Run_backward, Run_backward_left, Run_backward_right, Run_left, Run_right } from './references.js';
@@ -13,6 +16,19 @@ let fadeDuration = 0.2;
 let velocity = 0;
 let runVelocity = 8;
 let walkVelocity = 2;
+let physics;
+let physicsHelper;
+let characterController;
+let player;
+
+// STATS
+const stats = Stats();
+document.body.appendChild(stats.dom);
+
+initPhysics();
+
+// MANAGER
+const manager = new THREE.LoadingManager();
 
 // SCENE
 const scene = new THREE.Scene();
@@ -20,8 +36,8 @@ scene.background = new THREE.Color(0xa8def0);
 
 // CAMERA
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.y = 2;
-camera.position.z = -5;
+camera.position.y = 5;
+camera.position.z = -15;
 camera.position.x = 0;
 
 // RENDERER
@@ -33,10 +49,11 @@ renderer.shadowMap.enabled = true;
 // CONTROLS
 const orbitControls = new OrbitControls(camera, renderer.domElement);
 orbitControls.enableDamping = true;
-orbitControls.minDistance = 5;
+orbitControls.minDistance = 15;
 orbitControls.maxDistance = 15;
 orbitControls.enablePan = false;
-orbitControls.maxPolarAngle = Math.PI / 2 - 0.05;
+orbitControls.minPolarAngle = Math.PI / 4;
+orbitControls.maxPolarAngle = Math.PI / 2.5;
 cameraTarget.x = 0;
 cameraTarget.y = 1;
 cameraTarget.z = 0;
@@ -44,39 +61,28 @@ orbitControls.target = cameraTarget;
 orbitControls.update();
 
 // LIGHTS
-const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 1.0);
-directionalLight.position.set(-100, 100, 100);
-directionalLight.target.position.set(0, 0, 0);
-directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.width = 4096;
-directionalLight.shadow.mapSize.height = 4096;
+const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 1);
+directionalLight.position.set(0, 12.5, 12.5);
 scene.add(directionalLight);
 const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.25);
 scene.add(ambientLight);
 
-// FLOOR
-const plane = new THREE.Mesh(
-          new THREE.PlaneGeometry(20, 20, 10, 10),
-          new THREE.MeshStandardMaterial({
-              color: 0x808080,
-            }));
-plane.castShadow = false;
-plane.receiveShadow = true;
-plane.rotation.x = -Math.PI / 2;
-scene.add(plane);
+// GROUND MESH
+const groundGeo = new THREE.BoxGeometry(50, 0.5, 50);
+const groundMat = new THREE.MeshBasicMaterial({color: 'Gray'});
+const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+groundMesh.position.y = - 0.25;
+groundMesh.userData.physics = { mass: 0 };
+scene.add(groundMesh);
 
 // MODEL & ANIMATIONS
 let model;
 let mixer;
 const animationsMap = new Map();
-const manager = new THREE.LoadingManager();
 const loader = new FBXLoader(manager);
 loader.load(Player, (fbx) => {
         model = fbx;
         model.scale.setScalar(0.01);
-        model.traverse(c => {
-          c.castShadow = true;
-        });
     scene.add(model);
     mixer = new THREE.AnimationMixer(model);
     const animloader = new FBXLoader(manager);
@@ -143,6 +149,8 @@ const keys = {
     right: false,
     shift: false
 };
+
+// KEYDOWN EVENTLISTENER
 document.addEventListener('keydown', (event) => {
     switch(event.keyCode) {
         case 87: // w
@@ -163,6 +171,7 @@ document.addEventListener('keydown', (event) => {
     }
 }, false);
 
+// KEYUP EVENTLISTENER
 document.addEventListener('keyup', (event) => {
     switch(event.keyCode) {
         case 87: // w
@@ -188,6 +197,8 @@ const clock = new THREE.Clock();
 
 // ANIMATE
 function animate() {
+    stats.update();
+    if ( physicsHelper ) physicsHelper.update();
     const delta = clock.getDelta();
     orbitControls.update();
     update(delta);
@@ -368,18 +379,76 @@ function update(delta) {
         // Move model & camera
         const moveX = walkDirection.x * velocity * delta;
         const moveZ = walkDirection.z * velocity * delta;
-        model.position.x += moveX;
-        model.position.z += moveZ;
+        const moveVector = new THREE.Vector3(moveX, 0, moveZ);
+        characterController.computeColliderMovement( player.userData.collider, moveVector );
+        const translation = characterController.computedMovement();
+		const position = player.userData.collider.translation();
+        position.x += translation.x;
+		position.y += translation.y;
+		position.z += translation.z;
+        player.userData.collider.setTranslation( position );
+		// Sync Three.js mesh with Rapier collider
+		player.position.set( position.x, position.y, position.z );
+        model.position.x = player.position.x;
+        model.position.y = player.position.y - 1;
+        model.position.z = player.position.z;
 
         // Move camera
         camera.position.x += moveX;
         camera.position.z += moveZ;
 
         // Update camera target
-        cameraTarget.x = model.position.x;
-        cameraTarget.y = model.position.y + 1;
-        cameraTarget.z = model.position.z;
+        cameraTarget.x = player.position.x;
+        cameraTarget.y = player.position.y + 1;
+        cameraTarget.z = player.position.z;
         orbitControls.target = cameraTarget;
+
     }
 }
 
+function addCharacterController() {
+
+    // Character Capsule
+    const geometry = new THREE.CapsuleGeometry( 0.4, 1, 8, 8 );
+    const material = new THREE.MeshStandardMaterial( { color: 0x0000ff } );
+    player = new THREE.Mesh( geometry, material );
+    player.visible = false;
+    player.position.set( 0, 1, 0 );
+    scene.add( player );
+
+    // Rapier Character Controller
+    characterController = physics.world.createCharacterController( 0.01 );
+    characterController.setApplyImpulsesToDynamicBodies( true );
+    characterController.setCharacterMass( 3 );
+    const colliderDesc = physics.RAPIER.ColliderDesc.capsule( 0.5, 0.4 ).setTranslation( 0, 1, 0 );
+    player.userData.collider = physics.world.createCollider( colliderDesc );
+
+}
+
+async function initPhysics() {
+
+    //Initialize physics engine using the script in the jsm/physics folder
+    physics = await RapierPhysics();
+
+    //Optionally display collider outlines
+    physicsHelper = new RapierHelper( physics.world );
+    scene.add( physicsHelper );
+
+    physics.addScene( scene );
+
+    addCharacterController( );
+
+}
+
+// TEST BOX
+let fixed = true; // true = box and false = ball
+const geometry = ( fixed ) ? new THREE.BoxGeometry( 1, 1, 1 ) : new THREE.SphereGeometry( 0.25 );
+const material = new THREE.MeshStandardMaterial( { color: fixed ? 0xFF0000 : 0x00FF00 } );
+
+const mesh = new THREE.Mesh( geometry, material );
+
+mesh.position.set( 5, 0.5, 5 );
+
+mesh.userData.physics = { mass: fixed ? 0 : 0.5, restitution: fixed ? 0 : 0.3 };
+
+scene.add( mesh );
