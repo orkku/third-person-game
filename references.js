@@ -16,3 +16,4 @@ export const Run_left = "assets/characters/player/Rifle Aiming Run Left.fbx";
 export const Run_right = "assets/characters/player/Rifle Aiming Run Right.fbx";
 export const Run_backward_left = "assets/characters/player/Rifle Aiming Run Backward Left.fbx";
 export const Run_backward_right = "assets/characters/player/Rifle Aiming Run Backward Right.fbx";
+export const Rifle = "assets/guns/rifle/Assault_Rifle_A.fbx";

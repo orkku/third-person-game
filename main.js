@@ -3,8 +3,9 @@ import Stats from 'three/examples/jsm/libs/stats.module.js'
 import { RapierPhysics } from 'three/examples/jsm/Addons.js';
 import { RapierHelper } from 'three/examples/jsm/helpers/RapierHelper.js';
 import { OrbitControls } from 'three/examples/jsm/Addons.js';
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
-import { Player, Idle, Walk_forward, Walk_forward_left, Walk_forward_right, Walk_backward, Walk_backward_left, Walk_backward_right, Walk_left, Walk_right, Run_forward, Run_forward_left, Run_forward_right, Run_backward, Run_backward_left, Run_backward_right, Run_left, Run_right } from './references.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { TGALoader } from 'three/addons/loaders/TGALoader.js'
+import { Player, Rifle, Idle, Walk_forward, Walk_forward_left, Walk_forward_right, Walk_backward, Walk_backward_left, Walk_backward_right, Walk_left, Walk_right, Run_forward, Run_forward_left, Run_forward_right, Run_backward, Run_backward_left, Run_backward_right, Run_left, Run_right } from './references.js';
 
 // GLOBAL VARIABLES
 let currentAction = 'Idle';
@@ -25,10 +26,9 @@ let player;
 const stats = Stats();
 document.body.appendChild(stats.dom);
 
-initPhysics();
-
 // MANAGER
 const manager = new THREE.LoadingManager();
+manager.addHandler( /\.tga$/i, new TGALoader() );
 
 // SCENE
 const scene = new THREE.Scene();
@@ -49,10 +49,10 @@ renderer.shadowMap.enabled = true;
 // CONTROLS
 const orbitControls = new OrbitControls(camera, renderer.domElement);
 orbitControls.enableDamping = true;
-orbitControls.minDistance = 15;
-orbitControls.maxDistance = 15;
+orbitControls.minDistance = 5;
+orbitControls.maxDistance = 5;
 orbitControls.enablePan = false;
-orbitControls.minPolarAngle = Math.PI / 4;
+orbitControls.minPolarAngle = Math.PI / 2.5;
 orbitControls.maxPolarAngle = Math.PI / 2.5;
 cameraTarget.x = 0;
 cameraTarget.y = 1;
@@ -75,16 +75,22 @@ groundMesh.position.y = - 0.25;
 groundMesh.userData.physics = { mass: 0 };
 scene.add(groundMesh);
 
-// MODEL & ANIMATIONS
-let model;
+// MODEL CHARACTER & ANIMATIONS
+let modelCharacter;
 let mixer;
+let rightHand;
 const animationsMap = new Map();
-const loader = new FBXLoader(manager);
-loader.load(Player, (fbx) => {
-        model = fbx;
-        model.scale.setScalar(0.01);
-    scene.add(model);
-    mixer = new THREE.AnimationMixer(model);
+const FBXloader1 = new FBXLoader(manager);
+FBXloader1.load(Player, (fbx) => {
+    modelCharacter = fbx;
+    modelCharacter.scale.setScalar(0.01);
+    modelCharacter.traverse(c => {
+        if (c.name === 'mixamorigRightHand') {
+            rightHand = c;
+        }
+    });
+    scene.add(modelCharacter);
+    mixer = new THREE.AnimationMixer(modelCharacter);
     const animloader = new FBXLoader(manager);
     // LOAD ANIMATIONS
     animloader.load(Idle, (anim) => {        
@@ -141,6 +147,15 @@ loader.load(Player, (fbx) => {
     });
 });
 
+// MODEL RIFLE
+let modelRifle;
+const FBXloader2 = new FBXLoader(manager);
+FBXloader2.load(Rifle, (fbx) => {
+    modelRifle = fbx;
+    modelRifle.scale.setScalar(0.01);
+    scene.add(modelRifle);
+});
+
 // CONTROLS
 const keys = {
     forward: false,
@@ -192,13 +207,17 @@ document.addEventListener('keyup', (event) => {
     }
 }, false);
 
+initPhysics();
+
 // CLOCK
 const clock = new THREE.Clock();
 
 // ANIMATE
 function animate() {
     stats.update();
-    if ( physicsHelper ) physicsHelper.update();
+    if ( physicsHelper ) {
+        physicsHelper.update();
+    }
     const delta = clock.getDelta();
     orbitControls.update();
     update(delta);
@@ -212,7 +231,6 @@ animate();
 // UPDATE ANIMATIONS
 function update(delta) {
 
-    // UUSIKSI !!!
     var play = 'Idle';
     if (keys.forward) {
         play = 'Walk_forward';
@@ -278,18 +296,18 @@ function update(delta) {
         mixer.update(delta);
     }
 
-    if (model) {
+    if (modelCharacter) {
         // Calculate towards camera direction
         var angleYCameraDirection = Math.atan2(
-            (camera.position.x - model.position.x),
-            (camera.position.z - model.position.z)
+            (camera.position.x - modelCharacter.position.x),
+            (camera.position.z - modelCharacter.position.z)
         );
         // Diagonal movement angle offset
         var directionOffset = Math.PI; // w
 
-        // Rotate model
+        // Rotate modelCharacter
         rotateQuarternion.setFromAxisAngle(rotateAngle, angleYCameraDirection + directionOffset);
-        model.quaternion.rotateTowards(rotateQuarternion, 0.75);
+        modelCharacter.quaternion.rotateTowards(rotateQuarternion, 0.75);
 
         // Calculate direction
         camera.getWorldDirection(walkDirection);
@@ -297,17 +315,14 @@ function update(delta) {
         // Run / Walk velocity
         switch(currentAction) {
             case 'Walk_forward':
-                walkDirection.y = 0;
                 velocity = walkVelocity;
             break;
             case 'Walk_forward_left':
                 walkDirection.applyAxisAngle(rotateAngle, Math.PI / 4);
-                walkDirection.y = 0;
                 velocity = walkVelocity;
             break;
             case 'Walk_forward_right':
                 walkDirection.applyAxisAngle(rotateAngle, -Math.PI / 4);
-                walkDirection.y = 0;
                 velocity = walkVelocity;
             break;
             case 'Walk_backward':
@@ -316,22 +331,18 @@ function update(delta) {
             break;
             case 'Walk_backward_left':
                 walkDirection.applyAxisAngle(rotateAngle, Math.PI / 4 + Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = walkVelocity;
             break;
             case 'Walk_backward_right':
                 walkDirection.applyAxisAngle(rotateAngle, -Math.PI / 4 - Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = walkVelocity;
             break;
             case 'Walk_left':
                 walkDirection.applyAxisAngle(rotateAngle, Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = walkVelocity;
             break;
             case 'Walk_right':
                 walkDirection.applyAxisAngle(rotateAngle, -Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = walkVelocity;
             break;
             case 'Run_forward':
@@ -339,12 +350,11 @@ function update(delta) {
             break;
             case 'Run_forward_left':
                 walkDirection.applyAxisAngle(rotateAngle, Math.PI / 4);
-                walkDirection.y = 0;
+
                 velocity = runVelocity;
             break;
             case 'Run_forward_right':
                 walkDirection.applyAxisAngle(rotateAngle, -Math.PI / 4);
-                walkDirection.y = 0;
                 velocity = runVelocity;
             break;
             case 'Run_backward':
@@ -352,22 +362,18 @@ function update(delta) {
             break;
             case 'Run_backward_left':
                 walkDirection.applyAxisAngle(rotateAngle, Math.PI / 4 + Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = runVelocity;
             break;
             case 'Run_backward_right':
                 walkDirection.applyAxisAngle(rotateAngle, -Math.PI / 4 - Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = runVelocity;
             break;
             case 'Run_left':
                 walkDirection.applyAxisAngle(rotateAngle, Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = runVelocity;
             break;
             case 'Run_right':
                 walkDirection.applyAxisAngle(rotateAngle, -Math.PI / 2);
-                walkDirection.y = 0;
                 velocity = runVelocity;
             break;
             default:
@@ -376,32 +382,40 @@ function update(delta) {
         }
         
 
-        // Move model & camera
-        const moveX = walkDirection.x * velocity * delta;
-        const moveZ = walkDirection.z * velocity * delta;
-        const moveVector = new THREE.Vector3(moveX, 0, moveZ);
-        characterController.computeColliderMovement( player.userData.collider, moveVector );
-        const translation = characterController.computedMovement();
-		const position = player.userData.collider.translation();
-        position.x += translation.x;
-		position.y += translation.y;
-		position.z += translation.z;
-        player.userData.collider.setTranslation( position );
-		// Sync Three.js mesh with Rapier collider
-		player.position.set( position.x, position.y, position.z );
-        model.position.x = player.position.x;
-        model.position.y = player.position.y - 1;
-        model.position.z = player.position.z;
+        // Move modelCharacter & camera
+        if (characterController) {
+            const moveX = walkDirection.x * velocity * delta;
+            const moveZ = walkDirection.z * velocity * delta;
+            const moveVector = new THREE.Vector3(moveX, 0, moveZ);
+            characterController.computeColliderMovement( player.userData.collider, moveVector );
+            const translation = characterController.computedMovement();
+            const position = player.userData.collider.translation();
+            position.x += translation.x;
+            position.y += translation.y;
+            position.z += translation.z;
+            player.userData.collider.setTranslation(position);
+            // Sync Three.js mesh with Rapier collider
+            player.position.set(position.x, position.y, position.z);
+            modelCharacter.position.x = player.position.x;
+            modelCharacter.position.y = player.position.y - 1;
+            modelCharacter.position.z = player.position.z;
 
-        // Move camera
-        camera.position.x += moveX;
-        camera.position.z += moveZ;
+            // Move camera
+            camera.position.x += moveX;
+            camera.position.z += moveZ;
 
-        // Update camera target
-        cameraTarget.x = player.position.x;
-        cameraTarget.y = player.position.y + 1;
-        cameraTarget.z = player.position.z;
-        orbitControls.target = cameraTarget;
+            // Update camera target
+            cameraTarget.x = player.position.x;
+            cameraTarget.y = player.position.y + 1;
+            cameraTarget.z = player.position.z;
+            orbitControls.target = cameraTarget;
+        }
+
+        if (rightHand && modelRifle) {
+            rightHand.getWorldPosition(modelRifle.position);            
+            modelRifle.setRotationFromQuaternion(modelCharacter.quaternion);
+            modelRifle.rotateX(-Math.PI / 2);
+        }
 
     }
 }
@@ -442,12 +456,14 @@ async function initPhysics() {
 
 // TEST BOX
 let fixed = true; // true = box and false = ball
-const geometry = ( fixed ) ? new THREE.BoxGeometry( 1, 1, 1 ) : new THREE.SphereGeometry( 0.25 );
+const geometry = ( fixed ) ? new THREE.BoxGeometry( 15, 15, 5 ) : new THREE.SphereGeometry( 0.25 );
 const material = new THREE.MeshStandardMaterial( { color: fixed ? 0xFF0000 : 0x00FF00 } );
 
 const mesh = new THREE.Mesh( geometry, material );
 
-mesh.position.set( 5, 0.5, 5 );
+mesh.position.set( 15, 0, 15 );
+
+mesh.rotation.set(Math.PI / 3, 0, 0);
 
 mesh.userData.physics = { mass: fixed ? 0 : 0.5, restitution: fixed ? 0 : 0.3 };
 
